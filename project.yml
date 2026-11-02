@@ -1,0 +1,67 @@
+# XcodeGen 工程定义：在 Mac 上 `xcodegen generate` 即可生成 BaoGao.xcodeproj
+# 好处：不提交 pbxproj，工程结构用这份 YAML 维护（Windows 上也能改）。
+#
+# 本工程对照此前做的苹果 App（dice-cup-ios / img-compress-ios）同款范式：
+#   纯代码 Swift（无 storyboard）+ WKWebView 壳 + JS↔原生桥。
+# 与那两个工程的区别：本 App 是「服务器驱动」——WKWebView 直接加载远端
+#   https://feng.cpolar.top/baogao/，不把 www/ 打进包（Web 改了不用重打 IPA）。
+name: BaoGao
+options:
+  bundleIdPrefix: cn.baogao
+  createIntermediateGroups: true
+settings:
+  base:
+    # ⚠️ 换成你自己的 Apple Developer Team ID（Xcode 里看：Signing & Capabilities）。
+    # 本地跑模拟器/真机调试时用你自己的账号即可；上架/TestFlight 需付费开发者。
+    DEVELOPMENT_TEAM: YOUR_TEAM_ID
+    SWIFT_VERSION: "5.9"
+targets:
+  BaoGao:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    productName: BaoGao
+    sources:
+      - path: ios          # Swift 源码 + Info.plist + PrivacyInfo + 资产目录
+    info:
+      path: ios/Info.plist
+      # ⚠️ 铁律（同 dice-cup-ios）：xcodegen 生成工程时会【整份重写】ios/Info.plist，
+      #    内容 = 内置默认键 + 这里的 properties，不会保留该文件里手写的其它键。
+      #    凡必须进包的键（含隐私描述）都要写在这里。
+      properties:
+        # 未使用非豁免加密；丢了 TestFlight 每个构建都会标"缺少出口合规证明"
+        ITSAppUsesNonExemptEncryption: false
+
+        CFBundleDevelopmentRegion: zh-Hans
+        CFBundleDisplayName: 我要报告
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+
+        # ---- 隐私描述（iOS 强制，缺一个对应功能首次使用就崩/被拒）----
+        NSCameraUsageDescription: "用于拍摄小广告照片进行举报"
+        NSPhotoLibraryUsageDescription: "用于从相册选择小广告照片进行举报"
+        NSLocationWhenInUseUsageDescription: "用于标记小广告所在位置，方便城管定位处理"
+
+        CADisableMinimumFrameDurationOnPhone: true
+        UILaunchScreen:
+          # 指向真实存在的颜色集（App 背景色 #DDE3EA），避免启动屏失效导致 App 缩到 70% 居中。
+          UIColorName: LaunchBackground
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: false
+        UIViewControllerBasedStatusBarAppearance: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cn.baogao.app   # 与安卓包名一致
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"                # 仅 iPhone
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
+schemes:
+  BaoGao:
+    build:
+      targets:
+        BaoGao: all
+    archive:
+      config: Release
