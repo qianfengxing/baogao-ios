@@ -1,0 +1,40 @@
+# Codemagic 构建配置：把「我要报告」iOS 工程打成 IPA（无需本机 Mac）
+# 本工程用 XcodeGen 管理（project.yml），这里先 generate 出 .xcodeproj 再 archive。
+#
+# 使用前两步手动配置（Codemagic 网页）：
+#   1) Settings → Code signing → iOS certificates & provisioning profiles
+#      上传你的 Apple 开发者证书 + 描述文件（Ad Hoc / App Store 均可）。
+#   2) Environment variables 里设置 APPLE_TEAM_ID = 你的 10 位 Team ID
+#      （Xcode 里 Signing & Capabilities 能看到）。
+# 配好后点右上角「Check for configuration file」即可开始构建。
+
+workflows:
+  ios-build:
+    name: BaoGao iOS
+    max_build_duration: 30
+    environment:
+      xcode: latest
+      cocoapods: default
+      vars:
+        XCODE_PROJECT: BaoGao.xcodeproj
+        XCODE_SCHEME: BaoGao
+        BUNDLE_ID: cn.baogao.app
+    scripts:
+      - name: 安装 XcodeGen
+        script: |
+          brew install xcodegen || true
+      - name: 生成 Xcode 工程
+        script: xcodegen generate
+      - name: 设置签名（读取 Code signing 里上传的证书/描述文件）
+        script: xcode-project use-profiles
+      - name: 构建并归档
+        script: |
+          xcodebuild -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath "$CM_BUILD_DIR/BaoGao.xcarchive" \
+            clean archive \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+    artifacts:
+      - $CM_BUILD_DIR/BaoGao.xcarchive
