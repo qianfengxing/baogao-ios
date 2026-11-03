@@ -12,10 +12,11 @@
 #      上传 Apple Distribution 证书(.p12) + 描述文件「BaoGao AppStore」。
 #      ⚠️ 描述文件必须为 com.qianfengxing.baogao 新建（复用现有 Distribution 证书即可），
 #         不能复用 dicecup / imgcompress / dualcamrecorder 的描述文件（绑定了各自的 bundle id）。
-#   2) App Store Connect 上传凭证：走 publishing 的 auth: api_key，直接读环境变量组
-#      app_store_credentials 里的 APP_STORE_CONNECT_PRIVATE_KEY / _KEY_IDENTIFIER / _ISSUER_ID
-#      （旧工程已建，标准命名）。注意：当前 Codemagic schema 下 auth: integration 必须在
-#      workflow 下补 integrations 块且要写对集成名，反而更脆；api_key 自包含更稳。
+#   2) App Store Connect 上传凭证：publishing.app_store_connect 直接给 api_key/key_id/issuer_id
+#      三个字段（不写 auth: 键），读环境变量组 app_store_credentials 里的
+#      APP_STORE_CONNECT_PRIVATE_KEY / _KEY_IDENTIFIER / _ISSUER_ID（旧工程已建，标准命名）。
+#      这是官方文档的 API-key 自包含写法；比 auth: integration（要在 workflow 下补
+#      integrations 块且写对集成名）更稳。
 
 workflows:
   ios-build:
@@ -82,8 +83,7 @@ workflows:
       - $CM_BUILD_DIR/build/ios/ipa/*.ipa
     publishing:
       app_store_connect:
-        # 直接用环境变量组 app_store_credentials 里的标准 ASC API 变量（自包含，不依赖集成命名）
-        auth: api_key
+        # 直接用环境变量组 app_store_credentials 里的标准 ASC API 变量（自包含，不写 auth: 键）
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
