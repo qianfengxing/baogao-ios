@@ -7,13 +7,12 @@
 #   https://feng.cpolar.top/baogao/，不把 www/ 打进包（Web 改了不用重打 IPA）。
 name: BaoGao
 options:
-  bundleIdPrefix: cn.baogao
+  bundleIdPrefix: com.qianfengxing
   createIntermediateGroups: true
 settings:
   base:
-    # ⚠️ 换成你自己的 Apple Developer Team ID（Xcode 里看：Signing & Capabilities）。
-    # 本地跑模拟器/真机调试时用你自己的账号即可；上架/TestFlight 需付费开发者。
-    DEVELOPMENT_TEAM: YOUR_TEAM_ID
+    # Apple Developer Team ID（与 dice-cup-ios / img-compress-ios / DualCamRecorder 同一账号）。
+    DEVELOPMENT_TEAM: Z56ZQ7X7BR
     SWIFT_VERSION: "5.9"
 targets:
   BaoGao:
@@ -53,7 +52,7 @@ targets:
           - UIInterfaceOrientationPortrait
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cn.baogao.app   # 与安卓包名一致
+        PRODUCT_BUNDLE_IDENTIFIER: com.qianfengxing.baogao   # iOS 统一用 com.qianfengxing.* 体系（与安卓包名不同，正常）
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1"                # 仅 iPhone
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
