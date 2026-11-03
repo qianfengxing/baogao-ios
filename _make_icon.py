@@ -14,18 +14,14 @@ OUT = os.path.join(os.path.dirname(__file__),
 
 def make(size, path):
     S = size
-    pad = round(S * 4 / 192) if S >= 96 else 1
-    box = S - pad * 2
-    corner = round(box * 40 / 184)
+    # ⚠️ 关键：App Store 图标禁止 alpha 通道 / 透明像素（否则上传报 90717）。
+    # iOS 会自动对图标做圆角遮罩，所以源图必须是「整张填满红色的不透明正方形」。
+    img = Image.new('RGB', (S, S), BG[:3])
+    d = ImageDraw.Draw(img)
     ring_r = round(S * 62 / 192)
     ring_w = max(2, round(S * 8 / 192))
-
-    img = Image.new('RGBA', (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([pad, pad, pad + box - 1, pad + box - 1],
-                        radius=corner, fill=BG)
     d.ellipse([S / 2 - ring_r, S / 2 - ring_r, S / 2 + ring_r, S / 2 + ring_r],
-              outline=RING, width=ring_w)
+              outline=RING[:3], width=ring_w)
 
     inner = ring_r - ring_w / 2 - ring_w * 0.35
     fs = round(S * 46 / 192)
@@ -44,11 +40,11 @@ def make(size, path):
 
     x = S / 2 - total / 2
     for c, w in zip(chars, widths):
-        d.text((x + w / 2, S / 2), c, font=font, fill=RING, anchor='mm')
+        d.text((x + w / 2, S / 2), c, font=font, fill=RING[:3], anchor='mm')
         x += w + gap
 
     img.save(path)
-    print('saved %s (%dx%d, text=%s, fontsize=%d)' % (path, S, S, TEXT, fs))
+    print('saved %s (%dx%d, text=%s, fontsize=%d, OPAQUE)' % (path, S, S, TEXT, fs))
 
 
 if __name__ == '__main__':
