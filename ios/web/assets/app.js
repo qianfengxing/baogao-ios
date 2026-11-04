@@ -480,22 +480,35 @@
      主流程：拍照即传（手机端不做 OCR，识别/举报由后台负责）
      ============================================================ */
   function locateOnce(timeout) {
+    const ms = timeout || 8000;
     return new Promise((resolve, reject) => {
+      /* 安卓原生定位桥：用 LocationManager 直取 GPS/网络坐标（WGS84 原始值），
+         不依赖 GMS，国产 ROM（如魅族）也能定位。WebView 自带的 navigator.geolocation
+         在缺 GMS 的机器上既不成功也不失败、会一直转，所以安卓优先走原生桥。
+         iOS / 桌面调试没有该桥，退化到网页 geolocation。 */
+      if (window.BaoGaoNative && typeof window.BaoGaoNative.getLocation === 'function') {
+        let settled = false;
+        window.__onNativeLocation = (lat, lng, acc, err) => {
+          if (settled) return; settled = true;
+          if (lat != null && lng != null) resolve({ lat: lat, lng: lng, accuracy: (acc || 0) });
+          else reject(new Error(err || '定位失败'));
+        };
+        const guard = setTimeout(() => {
+          if (settled) return; settled = true; reject(new Error('定位超时'));
+        }, ms + 5000);
+        try { window.BaoGaoNative.getLocation(); }
+        catch (e) { if (!settled) { settled = true; reject(e); } }
+        return;
+      }
+      // 退化路径：网页 geolocation（iOS / 桌面）。仍加独立定时器兜底，避免 WKWebView 永久挂起。
       if (!navigator.geolocation) return reject(new Error('不支持定位'));
-      const ms = timeout || 8000;
       let settled = false;
-      /* iOS WKWebView 的坑：定位权限被拒/未授权时，getCurrentPosition 既不成功也不失败，
-         连其内部 timeout 都不触发，导致 await 永久挂起、照片处理 overlay 永远「准备中」。
-         安卓 WebView 在拒绝时会正确回调 error，故不卡。这里加一层独立定时器强制超时，
-         无论系统是否回调，ms 后必定 reject，主流程 catch 成 null 继续，绝不再卡界面。 */
       const guard = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        reject(new Error('定位超时'));
+        if (settled) return; settled = true; reject(new Error('定位超时'));
       }, ms);
       navigator.geolocation.getCurrentPosition(
         pos => { if (settled) return; settled = true; clearTimeout(guard);
-          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
         err => { if (settled) return; settled = true; clearTimeout(guard); reject(err); },
         { enableHighAccuracy: true, timeout: ms, maximumAge: 60000 }
       );
@@ -1888,23 +1901,22 @@
     /* ---- 我的位置（GPS WGS84 → GCJ-02，蓝色圆点） ---- */
     locate() {
       if (!this.map) return;
-      if (!navigator.geolocation) { toast('手机不支持定位'); return; }
       toast('正在定位…');
-      navigator.geolocation.getCurrentPosition(pos => {
-        const c = wgs2gcjF(pos.coords.latitude, pos.coords.longitude);
-        this.map.setView([c.lat, c.lng], 16);
+      locateOnce(10000).then(c => {
+        const cc = wgs2gcjF(c.lat, c.lng);
+        this.map.setView([cc.lat, cc.lng], 16);
         if (this.me) { this.me.remove(); this.me = null; }
         if (this.meAcc) { this.meAcc.remove(); this.meAcc = null; }
-        this.me = L.circleMarker([c.lat, c.lng], {
+        this.me = L.circleMarker([cc.lat, cc.lng], {
           radius: 8, color: '#fff', weight: 3, fillColor: '#1A73E8', fillOpacity: 1
         }).addTo(this.map);
-        if (pos.coords.accuracy) {
-          this.meAcc = L.circle([c.lat, c.lng], {
-            radius: Math.min(pos.coords.accuracy, 200), color: '#1A73E8', weight: 1, fillOpacity: 0.08
+        if (c.accuracy) {
+          this.meAcc = L.circle([cc.lat, cc.lng], {
+            radius: Math.min(c.accuracy, 200), color: '#1A73E8', weight: 1, fillOpacity: 0.08
           }).addTo(this.map);
         }
         toast('已定位到你的位置');
-      }, () => toast('定位失败，检查是否授权了位置权限'), { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+      }).catch(() => toast('定位失败，检查是否授权了位置权限'));
     },
 
     updateStats() {
@@ -2354,21 +2366,16 @@
     el.inpLoc.addEventListener('input', () => { S.loc = el.inpLoc.value; refreshStamp(); });
 
     $('#btn-geo').addEventListener('click', () => {
-      if (!navigator.geolocation) { toast('这台设备不支持定位'); return; }
       el.geoHint.textContent = '正在定位…';
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          S.coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          el.geoHint.textContent = `已定位（误差约 ${Math.round(pos.coords.accuracy)} 米），坐标会写进材料。`;
-          refreshStamp();
-          toast('定位成功');
-        },
-        err => {
-          el.geoHint.textContent = '定位失败或被拒绝，手动填写地点即可。';
-          toast('定位不可用');
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-      );
+      locateOnce(10000).then(c => {
+        S.coords = { lat: c.lat, lng: c.lng };
+        el.geoHint.textContent = `已定位（误差约 ${Math.round(c.accuracy || 0)} 米），坐标会写进材料。`;
+        refreshStamp();
+        toast('定位成功');
+      }).catch(() => {
+        el.geoHint.textContent = '定位失败，手动填写地点即可。';
+        toast('定位不可用');
+      });
     });
 
     $$('[data-add]').forEach(btn => btn.addEventListener('click', () => {
