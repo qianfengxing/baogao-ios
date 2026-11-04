@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B4F9E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="我要报告">
+<meta name="description" content="拍下城市小广告，自动提取电话与网址，生成可直接提交的举报材料。">
+<title>我要报告 · 小广告取证举报</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- 顶栏已移除：手机 App 用底部导航 + 系统返回键就够，
+       页留一条会占掉顶部一截，还和底部导航重复。
+       下面的返回钮只在「非 App 环境」（浏览器预览）里出现，App 里靠返回键。 -->
+  <button class="back-float" id="btn-back" aria-label="返回" hidden>
+    <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+
+  <main id="main">
+
+    <!-- ============ 首页（地图即首页：拍照 + 举报印章 + 网友评分） ============ -->
+    <section class="view active" data-view="home">
+
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-overlay" id="map-overlay">
+          <div class="map-search">
+            <svg class="s-ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.2-4.2"/></svg>
+            <input id="map-search-input" placeholder="搜地点，如：鸠兹广场" autocomplete="off" enterkeyhint="search">
+            <button class="s-clear" id="map-search-clear" hidden aria-label="清空">✕</button>
+            <div class="map-search-results" id="map-search-results" hidden></div>
+          </div>
+          <div class="mo-card">
+            <div class="mo-row">
+              <div><b id="mo-total">0</b><span>累计举报</span></div>
+              <div><b id="mo-num">0</b><span>已处理</span></div>
+              <div><b id="mo-area">—</b><span>覆盖区县</span></div>
+            </div>
+          </div>
+        </div>
+        <button class="map-locate" id="map-locate" aria-label="回到我的位置">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        </button>
+        <div class="map-fallback" id="map-fallback" hidden>
+          <svg viewBox="0 0 24 24"><path d="M9 4l6 2 6-2v14l-6 2-6-2-6 2V6z"/><path d="M9 4v14M15 6v14"/></svg>
+          <b>地图没加载出来</b>
+          <span id="map-fb-reason">正在重试，或点下面的按钮手动重试</span>
+          <button class="ghost" id="map-retry">重试</button>
+        </div>
+      </div>
+
+      <div class="shoot-float">
+        <div class="photo-shelf" id="photo-shelf" hidden></div>
+        <button class="btn-upload" id="btn-upload" hidden>上传</button>
+        <button class="shoot" id="btn-camera" aria-label="拍照上传">
+          <span class="shoot-ring"></span>
+          <svg viewBox="0 0 24 24"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7l1.1-1.8A1 1 0 0 1 9.2 4h5.6a1 1 0 0 1 .9.6L16.8 6h1.7A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+          <span class="shoot-label">拍照上传</span>
+        </button>
+        <div class="shoot-sub">
+          <button class="ghost" id="btn-album">从相册选</button>
+        </div>
+        <p class="shoot-tip">拍下小广告上传即可 · 识别、举报、封号均由后台自动处理</p>
+      </div>
+    </section>
+
+    <!-- ============ 编辑举报（像发朋友圈：看图、看定位、写说明，再点「报告」提交） ============ -->
+    <section class="view" data-view="compose">
+      <div class="cmp">
+        <div class="judge" data-judge hidden></div>
+        <div class="cmp-photos">
+          <div class="cmp-grid" id="cmp-grid"></div>
+          <div class="cmp-adds">
+            <button class="cmp-add" id="cmp-add-camera">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7l1.1-1.8A1 1 0 0 1 9.2 4h5.6a1 1 0 0 1 .9.6L16.8 6h1.7A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+              继续拍照
+            </button>
+            <button class="cmp-add" id="cmp-add-album">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
+              从相册加
+            </button>
+          </div>
+        </div>
+
+        <div class="cmp-card">
+          <div class="cmp-row">
+            <svg class="cmp-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+            <div class="cmp-loc">
+              <b id="cmp-loc-name">正在定位…</b>
+              <span id="cmp-loc-coord"></span>
+            </div>
+            <button class="cmp-mini" id="cmp-relocate">重新定位</button>
+          </div>
+          <input class="cmp-input" id="cmp-loc-input" maxlength="60"
+                 placeholder="补充具体位置（选填）：如 镜湖路电信箱上">
+        </div>
+
+        <div class="cmp-card">
+          <textarea class="cmp-note" id="cmp-note" maxlength="300" rows="4"
+                    placeholder="说说这处小广告的情况（选填）：贴在哪、写的什么内容…"></textarea>
+          <div class="cmp-count"><span id="cmp-note-count">0</span> / 300</div>
+        </div>
+
+        <p class="cmp-tip">点「报告」提交后，识别、举报、封号均由后台自动处理，不会公开你的信息。</p>
+      </div>
+
+      <div class="cmp-bar">
+        <button class="cmp-submit" id="cmp-submit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+          <span id="cmp-submit-text">报告</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ 核对 ============ -->
+    <section class="view" data-view="review">
+
+      <div class="judge" data-judge hidden></div>
+
+      <div class="photo-box">
+        <img id="review-img" alt="待举报的小广告照片">
+        <div class="photo-tools">
+          <button class="chip" id="btn-zoom">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v6M8 11h6"/></svg>放大
+          </button>
+          <button class="chip" id="btn-repick">
+            <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"/><path d="M4 20v-4h4"/></svg>换一张
+          </button>
+        </div>
+        <div class="stamp" id="stamp"></div>
+      </div>
+
+      <div class="block">
+        <div class="block-hd">
+          <svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+          <b>发现地点</b>
+          <button class="mini" id="btn-geo">自动定位</button>
+        </div>
+        <input class="field" id="inp-loc" placeholder="如：芜湖市镜湖区中山路步行街公厕" autocomplete="off">
+        <div class="hint" id="geo-hint">定位后才会出现在地图上</div>
+      </div>
+
+      <div class="block">
+        <div class="block-hd">
+          <svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+          <b>广告类型</b>
+        </div>
+        <div class="tags" id="tags"></div>
+      </div>
+
+      <div class="block" id="grp-phone">
+        <div class="block-hd">
+          <svg class="i" viewBox="0 0 24 24"><path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5v3c0 1.4-1.1 2.5-2.5 2.5C10.6 19 5 13.4 4 5.9 4 4.6 5.1 3.5 6.5 3.5z"/></svg>
+          <b>电话号码</b><span class="cnt" id="cnt-phone">0</span>
+        </div>
+        <div class="items" id="list-phone"></div>
+        <button class="add" data-add="phone">+ 手动补一个号码</button>
+      </div>
+
+      <div class="block" id="grp-url">
+        <div class="block-hd">
+          <svg class="i" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+          <b>网址 / 社交账号</b><span class="cnt" id="cnt-url">0</span>
+        </div>
+        <div class="items" id="list-url"></div>
+        <button class="add" data-add="url">+ 手动补一个网址</button>
+      </div>
+
+      <div class="block" id="grp-other">
+        <div class="block-hd toggle" data-toggle="other">
+          <svg class="i" viewBox="0 0 24 24"><path d="M4 5h16M4 10h16M4 15h11"/></svg>
+          <b>识别到的其余文字</b>
+          <svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="raw" id="raw-text" hidden></div>
+      </div>
+
+      <div class="sticky-act">
+        <button class="primary" id="btn-generate">
+          <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
+          生成举报材料
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ 举报材料 ============ -->
+    <section class="view" data-view="submit">
+      <div class="report" id="report-card">
+        <div class="report-top">
+          <div>
+            <span class="report-tag">举报材料</span>
+            <h2 id="report-title">违法张贴小广告</h2>
+          </div>
+          <div class="report-no">
+            <span>编号</span><b id="report-no">—</b>
+          </div>
+        </div>
+        <div class="report-flag" id="report-flag"></div>
+        <div class="report-body" id="report-body"></div>
+        <div class="report-foot">
+          <span>由「我要报告」应用自动整理</span>
+        </div>
+      </div>
+
+      <div class="act-list">
+        <button class="act primary" id="btn-copy">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+          <div><b>复制全文</b><span>自行提交时备用</span></div>
+        </button>
+        <button class="act" id="btn-share">
+          <svg viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg>
+          <div><b>分享</b><span>连照片一起发</span></div>
+        </button>
+        <button class="act" id="btn-mail">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+          <div><b>邮件举报</b><span>发城管举报邮箱</span></div>
+        </button>
+        <button class="act" id="btn-cert">
+          <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+          <div><b>存凭证图</b><span>一张长图</span></div>
+        </button>
+      </div>
+
+      <div class="card up">
+        <div class="card-hd">
+          <svg class="i" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg>
+          <b>已提交到举报中心</b>
+        </div>
+        <p class="up-note" id="up-note">材料已上传，由后台对接相关部门举报并申请封禁，不对外公开。</p>
+      </div>
+
+      <div class="sticky-act">
+        <button class="primary ghostly" id="btn-save-next">完成，再去拍一张</button>
+      </div>
+    </section>
+
+    <!-- ============ 记录 ============ -->
+    <section class="view" data-view="records">
+      <p class="thanks">感谢您为文明城市做出的贡献</p>
+      <div class="badge-card" id="badge-card" hidden>
+        <div class="bc-top">
+          <span class="bc-medal" id="bc-medal">🥉</span>
+          <div class="bc-txt">
+            <b id="bc-name">未登录</b>
+            <span id="bc-line">登录后举报计入徽章</span>
+          </div>
+          <button class="bc-btn" id="bc-btn">登录</button>
+        </div>
+        <div class="bc-bar" id="bc-barwrap" hidden><i id="bc-bar"></i></div>
+      </div>
+
+      <div id="rec-list" class="rec-list"></div>
+      <div class="empty" id="rec-empty">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16v13H4z"/><path d="M8 7V5h8v2"/></svg>
+        <b>还没有记录</b>
+        <span>拍下第一张小广告，这里就会开始有东西</span>
+      </div>
+    </section>
+
+    <!-- ============ 登录 ============ -->
+    <section class="view" data-view="login">
+      <div class="login-card">
+        <h2 id="login-title">登录</h2>
+        <p class="login-sub">举报攒徽章：铜 → 银 → 金 → 钻石</p>
+
+        <button class="primary" id="btn-oneclick">本机一键登录</button>
+        <p class="login-note" id="oc-hint">免密码，用本机标识直接登录</p>
+
+        <div class="login-split"><span>或用昵称密码</span></div>
+        <input class="field" id="inp-name" placeholder="昵称" maxlength="16" autocomplete="username">
+        <input class="field" id="inp-pass" type="password" placeholder="密码（至少 4 位）" maxlength="32" autocomplete="current-password">
+        <button class="ghost" id="btn-do-login">登录 / 注册</button>
+        <button class="ghost" id="btn-skip">先逛逛，暂不登录</button>
+        <p class="login-note" id="login-msg"></p>
+      </div>
+    </section>
+
+    <!-- ============ 说明 ============ -->
+    <section class="view" data-view="about">
+      <div class="card">
+        <div class="card-hd"><b>「我要报告」是什么</b></div>
+        <p>拍下小广告，自动提取号码网址，生成举报材料。材料由后台对接相关部门进行举报，并对相关电话、网址进行封禁。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><b>举报依据</b></div>
+        <div class="law">
+          <b>《城市市容和环境卫生管理条例》第十七条</b>
+          <p>不得擅自在城市建筑物、设施上张贴宣传品。</p>
+        </div>
+        <div class="law">
+          <b>同条例 第三十四条</b>
+          <p>由市容环卫部门责令清除，可并处警告、罚款。</p>
+        </div>
+        <div class="law">
+          <b>涉嫌诈骗的</b>
+          <p>直接拨 96110 反诈专线。</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><b>徽章</b></div>
+        <ul class="dots">
+          <li><b>铜</b>　举报 1 次获得</li>
+          <li><b>银</b>　累计 10 次</li>
+          <li><b>金</b>　累计 30 次</li>
+          <li><b>钻石</b>　累计 100 次</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><b>意见反馈</b></div>
+        <p class="fb-note">遇到问题或有建议？写下来，可配图，我们会尽快看。</p>
+        <textarea id="fb-text" class="fb-text" rows="4" maxlength="500"
+                  placeholder="说说使用中遇到的问题或建议…"></textarea>
+        <div class="fb-row">
+          <button class="ghost" id="fb-pic">添加图片</button>
+          <span class="fb-count" id="fb-count">0/500</span>
+        </div>
+        <div class="fb-thumbs" id="fb-thumbs" hidden></div>
+        <button class="act primary fb-send" id="fb-send">提交反馈</button>
+        <p class="fb-tip" id="fb-tip" hidden></p>
+        <p class="fb-ver">v0.1 · 识别在本机运行，失败时可手动录入。</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============ 底部导航 ============ -->
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-goto="home">
+      <svg viewBox="0 0 24 24"><path d="M9 4l6 2 6-2v14l-6 2-6-2-6 2V6z"/><path d="M9 4v14M15 6v14"/></svg><span>取证</span>
+    </button>
+    <button class="tab" data-goto="records">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h11"/></svg><span>记录</span>
+    </button>
+    <button class="tab" data-goto="about">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.2"/></svg><span>说明</span>
+    </button>
+  </nav>
+
+  <!-- ============ 处理遮罩 ============ -->
+  <div class="overlay" id="overlay" hidden>
+    <div class="overlay-card">
+      <div class="pg" id="pg" role="progressbar" aria-label="上传进度"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <svg class="pg-svg" viewBox="0 0 100 100" aria-hidden="true">
+          <defs>
+            <linearGradient id="pgGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#2E7BF6"/>
+              <stop offset="100%" stop-color="#0B4F9E"/>
+            </linearGradient>
+          </defs>
+          <circle class="pg-track" cx="50" cy="50" r="43"/>
+          <circle class="pg-fill" id="pg-fill" cx="50" cy="50" r="43"/>
+        </svg>
+        <div class="pg-num"><b id="pg-pct">0</b><i>%</i></div>
+        <svg class="pg-done" id="pg-done" viewBox="0 0 52 52" aria-hidden="true">
+          <circle class="pg-done-ring" cx="26" cy="26" r="24"/>
+          <path class="pg-done-tick" d="M15 27 L23 34 L38 19"/>
+        </svg>
+      </div>
+      <b id="ov-title">正在识别</b>
+      <span id="ov-text">准备中…</span>
+      <span class="pg-amount" id="pg-amount" hidden></span>
+      <span class="pg-detail" id="pg-detail" hidden></span>
+      <button class="pg-cancel" id="pg-cancel" type="button" hidden>取消上传</button>
+    </div>
+  </div>
+
+  <!-- ============ 大图 ============ -->
+  <div class="viewer" id="viewer" hidden>
+    <img id="viewer-img" alt="">
+    <button class="viewer-close" id="viewer-close">关闭</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <input type="file" id="file-camera" accept="image/*" capture="environment" multiple hidden>
+  <input type="file" id="file-album" accept="image/*" multiple hidden>
+  <input type="file" id="file-feedback" accept="image/*" multiple hidden>
+</div>
+
+<!-- 地图：Leaflet（本地文件）+ 高德瓦片（免 key）。
+     SDK 由 app.js 在首页加载时按需拉取。 -->
+
+<script src="assets/app.js"></script>
+
+<!-- 全站悬浮在线聊天：仅网站版挂载；App 内（127.0.0.1 / file://）不加载，避免 404 噪音 -->
+<script>(function(){if(location.hostname==='feng.cpolar.top'){var s=document.createElement('script');s.src='/_wb/chat-widget.js';document.body.appendChild(s);}})()</script>
+</body>
+</html>

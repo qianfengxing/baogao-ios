@@ -1,0 +1,33 @@
+{
+  "name": "报告 · 小广告取证举报",
+  "short_name": "报告",
+  "description": "拍下城市小广告，自动提取电话与网址，生成可直接提交的举报材料。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F2F4F7",
+  "theme_color": "#0B4F9E",
+  "lang": "zh-CN",
+  "categories": ["utilities", "government"],
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

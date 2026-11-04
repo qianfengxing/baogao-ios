@@ -6,6 +6,10 @@
 # 与那两个工程的区别：本 App 是「服务器驱动」——WKWebView 直接加载远端
 #   https://feng.cpolar.top/baogao/，不把 www/ 打进包（Web 改了不用重打 IPA）。
 name: BaoGao
+packages:
+  GCDWebServer:
+    url: https://github.com/swisspol/GCDWebServer
+    from: 3.5.4
 options:
   bundleIdPrefix: com.qianfengxing
   createIntermediateGroups: true
@@ -21,7 +25,9 @@ targets:
     deploymentTarget: "15.0"
     productName: BaoGao
     sources:
-      - path: ios          # Swift 源码 + Info.plist + PrivacyInfo + 资产目录
+      - path: ios          # Swift 源码 + Info.plist + PrivacyInfo + 资产目录 + 内置前端 web/
+    dependencies:
+      - package: GCDWebServer
     info:
       path: ios/Info.plist
       # ⚠️ 铁律（同 dice-cup-ios）：xcodegen 生成工程时会【整份重写】ios/Info.plist，
