@@ -1,6 +1,6 @@
 /* ============================================================
    报告 · 核心逻辑
-   取证 → 识别 → 核对 → 生成材料 → 提交/存证
+   取证 → 核对 → 生成材料 → 提交/存证
    ============================================================ */
 (function () {
   'use strict';
@@ -9,7 +9,6 @@
   /* 待重传箱：只在「上传失败（断网）」时暂存一份，联网后自动补传，
      成功后立刻清掉。它不进记录列表——记录页只显示服务器上的。 */
   const OUTBOX = 'baogao.outbox.v1';
-  const TESS_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   // 地图 SDK 按需加载：首页加载即拉 Leaflet + 高德瓦片（免 key）
   /* 私有举报后台地址：一律跟随当前页面所在目录，不再写死内网 IP。
      · 本地直连   http://127.0.0.1:8780/          -> API = ''
@@ -46,7 +45,6 @@
     thumb: null,      // 小图，用于记录
     photos: [],       // 多张待传：[{big, small}]
     ocrText: '',
-    judge: null,     // 拍照初检结论：{ level, title, detail, showRepick }
     items: [],
     loc: '',
     locName: '',    // 逆地理编码出来的地名（只显示，可手动补充）
@@ -59,9 +57,6 @@
     myReports: [],    // 服务端的「我的举报」（记录页直接显示这个，本机不再留副本）
     busy: false
   };
-
-  let worker = null;
-  let workerFailed = false;
 
   /* ---------------- DOM ---------------- */
   const $ = (s, r) => (r || document).querySelector(s);
@@ -443,7 +438,7 @@
   }
 
   /* ============================================================
-     OCR
+     通用工具：按需加载外部脚本（地图 SDK 等使用）
      ============================================================ */
   function loadScript(src, ms) {
     return new Promise((resolve, reject) => {
@@ -457,48 +452,6 @@
     });
   }
 
-  async function ocr(dataUrl) {
-    if (workerFailed) throw new Error('识别引擎不可用');
-
-    if (!window.Tesseract) {
-      setProgress(10, '正在加载识别引擎…');
-      await loadScript(TESS_CDN);
-    }
-    if (!window.Tesseract) throw new Error('识别引擎不可用');
-
-    if (!worker) {
-      setProgress(16, '首次使用需下载中文模型（约 20MB），请保持联网…');
-      worker = await window.Tesseract.createWorker('chi_sim+eng', 1, {
-        logger: msg => {
-          if (msg.status === 'loading language traineddata') {
-            setProgress(18 + Math.round((msg.progress || 0) * 26), '下载中文识别模型… ' + Math.round((msg.progress || 0) * 100) + '%');
-          } else if (msg.status === 'initializing api') {
-            setProgress(48, '初始化识别引擎…');
-          } else if (msg.status === 'recognizing text') {
-            setProgress(52 + Math.round((msg.progress || 0) * 44), '正在识别文字… ' + Math.round((msg.progress || 0) * 100) + '%');
-          }
-        }
-      });
-    }
-
-    setProgress(52, '正在识别文字…');
-    const res = await worker.recognize(dataUrl);
-    return (res && res.data && res.data.text) || '';
-  }
-
-  /* ============================================================
-     拍照初检（手机端轻量 OCR）：拍完就在本机先识别一次
-     ------------------------------------------------------------
-     只做「手机号 / 网址」识别结果的提示，绝不阻断提交——误判会毁掉一次真实取证。
-     · 只对「识别到手机号 / 网址」做提醒：识别到、置信度低、位数可疑都提示核对；
-     · 不评判画质（模糊、光线、反光、分辨率等一律不提醒）；
-     · 未识别到手机号或网址：提示「可坚持上传、交由人工处理」，同样能提交照片。
-     引擎全部走本机 /vendor，不依赖 CDN；首次约下载 6.8MB，之后 Service Worker 缓存。
-     ============================================================ */
-  const TESS_DIR = API + '/vendor/tesseract';
-  const URL_SUFFIX_RE = /\.(com|cn|net|org|xyz|top|cc|me|io|co|info|biz|vip|shop|wang|edu|gov)(\b|\/|$)/i;
-  let qWorker = null, qWorkerBroken = false;
-
   /* ---- 通用图片读取（多處复用：生成缩略图、回显大图等）---- */
   function loadImg(src) {
     return new Promise((resolve, reject) => {
@@ -509,122 +462,8 @@
     });
   }
 
-  /* ---- 轻量 OCR：eng + 数字字母白名单 ---- */
-  async function quickOcr(dataUrl) {
-    if (qWorkerBroken) throw new Error('引擎不可用');
-    if (!window.Tesseract) await loadScript(TESS_DIR + '/tesseract.min.js', 12000);
-    if (!window.Tesseract) throw new Error('引擎不可用');
-
-    if (!qWorker) {
-      // file:// 不透明源下跨域建 Worker 可能卡死，加 15s 超时，失败静默跳过
-      qWorker = await withTimeout(
-        window.Tesseract.createWorker('eng', 1, {
-          workerPath: TESS_DIR + '/worker.min.js',
-          corePath: TESS_DIR + '/core/tesseract-core-simd-lstm.wasm.js',
-          langPath: TESS_DIR + '/tessdata',
-          logger: () => { }          // 初检在后台跑，不打扰用户
-        }),
-        15000, null
-      );
-      if (!qWorker) throw new Error('引擎初始化超时');   // 超时 → 上层静默跳过，绝不卡 UI
-      // 只认数字字母和网址里会出现的符号：小广告上的联系方式就这些字符
-      await qWorker.setParameters({
-        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@.:/_-'
-      });
-    }
-    const r = await withTimeout(qWorker.recognize(dataUrl), 15000, { data: { text: '', confidence: 0 } });
-    const d = (r && r.data) || {};
-    return { text: d.text || '', confidence: d.confidence || 0 };
-  }
-
-  /* ---- 判定：只对「手机号 / 网址」识别结果做提示，画质一律不提醒；返回 { level, title, detail, showRepick } ---- */
-  function judgeContent(text, confidence) {
-    const items = extract(text || '');
-    const phones = items.filter(i => i.kind === 'phone');
-    const urls = items.filter(i => i.kind !== 'phone');
-
-    // 完整手机号：11 位且 1[3-9] 开头；400/800 热线 10 位
-    const goodPhones = phones.filter(p => {
-      const d = digits(p.raw);
-      return (d.length === 11 && /^1[3-9]/.test(d)) || (d.length === 10 && /^(400|800)/.test(d));
-    });
-    // 位数不对的数字串 → 疑似被涂改 / 拍得不完整
-    const oddPhones = phones.filter(p => {
-      const d = digits(p.raw);
-      if ((d.length === 11 && /^1[3-9]/.test(d)) || (d.length === 10 && /^(400|800)/.test(d))) return false;
-      return d.length >= 8 && d.length <= 13 && /^1/.test(d);
-    });
-    const goodUrls = urls.filter(u => URL_SUFFIX_RE.test(u.raw) || /@/.test(u.raw));
-
-    /* 识别到完整联系方式：正常提示，请核对 */
-    if (goodPhones.length || goodUrls.length) {
-      /* 有完整项但置信度偏低 → 提醒逐字核对 */
-      if (confidence && confidence < 70) {
-        return { level: 'warn', title: '识别置信度偏低（' + Math.round(confidence) + '%）',
-          detail: '已找到 ' + (goodPhones.length ? goodPhones.length + ' 个号码' : '') +
-                  (goodUrls.length ? (goodPhones.length ? '、' : '') + goodUrls.length + ' 个网址' : '') +
-                  '，请逐字核对下面列出的内容再提交。' };
-      }
-      /* 有可疑位数串 → 提醒核对 */
-      if (oddPhones.length) {
-        return { level: 'warn', title: '有 ' + oddPhones.length + ' 串号码位数不对',
-          detail: '例如 ' + maskPhone(oddPhones[0].raw) + '，手机号应为 11 位，这串可能被人涂改过或没拍全，请核对。' };
-      }
-      return { level: 'ok', title: '已识别到有效联系方式',
-        detail: (goodPhones.length ? goodPhones.length + ' 个号码' : '') +
-                (goodUrls.length ? (goodPhones.length ? '、' : '') + goodUrls.length + ' 个网址' : '') +
-                '，请核对无误后提交。' };
-    }
-
-    /* 没识别到手机号或网址：仅提示，不阻断——仍可坚持上传交由人工处理 */
-    if (oddPhones.length) {
-      return { level: 'info', title: '未识别到完整手机号或网址',
-        detail: '仅找到位数不对的疑似号码（如 ' + maskPhone(oddPhones[0].raw) + '）。未检测到相关数据，可坚持上传、交由人工处理。' };
-    }
-    return { level: 'info', title: '未识别到手机号或网址',
-      detail: '未检测到相关数据，可坚持上传、交由人工处理。' };
-  }
-
-  /* ---- 渲染判定条（compose / review 两页同一套） ---- */
-  function renderJudge() {
-    const boxes = document.querySelectorAll('[data-judge]');
-    if (!boxes.length) return;
-    const j = S.judge;
-    boxes.forEach(box => {
-      if (!j) { box.hidden = true; box.className = 'judge'; box.innerHTML = ''; return; }
-      box.hidden = false;
-      box.className = 'judge j-' + j.level;
-      const icon = j.level === 'ok'
-        ? '<path d="M20 6L9 17l-5-5"/>'
-        : j.level === 'run'
-          ? '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
-          : j.level === 'info'
-            ? '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.5"/>'
-            : '<path d="M12 8v5"/><path d="M12 16.5v.5"/><circle cx="12" cy="12" r="9"/>';
-      box.innerHTML =
-        '<svg class="j-ico" viewBox="0 0 24 24" aria-hidden="true">' + icon + '</svg>' +
-        '<div class="j-t"><b>' + (j.title || '') + '</b><span>' + (j.detail || '') + '</span>' +
-        (j.showRepick ? '<div style="margin-top:6px"><button class="j-act" data-repick>重新拍一张</button></div>' : '') +
-        '</div>';
-    });
-  }
-
-  /* ---- 入口：拍照后异步跑，不阻塞用户操作 ---- */
-  async function startQuickCheck() {
-    const p = S.photos && S.photos[0];
-    if (!p) { S.judge = null; renderJudge(); return; }
-    S.judge = { level: 'run', title: '正在本机识别…', detail: '识别照片中的手机号与网址' };
-    renderJudge();
-    try {
-      let o = { text: '', confidence: 0 };
-      try { o = await quickOcr(p.big); }
-      catch (e) { qWorkerBroken = true; }      // OCR 挂了就静默，不打扰用户
-      S.judge = judgeContent(o.text, o.confidence);
-    } catch (e) {
-      S.judge = null;                          // 初检失败：静默，不打扰用户
-    }
-    renderJudge();
-  }
+  /* OCR 已移除：本机不再做照片识别。识别 / 清洗交由后台处理，App 仅压缩并上传原图。
+     用户仍可在编辑页「手动补号码 / 网址」([data-add])。 */
 
   /* ============================================================
      照片水印（写入核对页角标）
@@ -697,9 +536,7 @@
       try { renderCompose(); renderShelf(); }
       catch (e) { console.error('渲染确认页失败', e); }
 
-      // 拍完即在本机异步跑一遍「轻量 OCR 初检」，不阻塞用户（判清晰/号码完整）
       dbg('addPhotos 完成 -> go(compose) 后 view=' + S.view + ' photos=' + S.photos.length);
-      void startQuickCheck();
       // 逆地理编码拿地名（网络慢，异步补上，不阻塞进页面）
       if (S.coords && !S.locName) {
         reverseGeocode(S.coords.lat, S.coords.lng)
@@ -2648,7 +2485,7 @@
   }
 
   function resetAll() {
-    S.photo = null; S.thumb = null; S.photos = []; S.ocrText = ''; S.items = []; S.judge = null;
+    S.photo = null; S.thumb = null; S.photos = []; S.ocrText = ''; S.items = [];
     S.loc = ''; S.locName = ''; S.note = ''; S.coords = null; S.adType = 'other'; S.report = null;
     el.inpLoc.value = '';
     const cmpNote = $('#cmp-note'); if (cmpNote) cmpNote.value = '';
@@ -2749,7 +2586,6 @@
         hideOverlay();
         go('compose');
         try { renderCompose(); renderShelf(); } catch (e) { console.error(e); }
-        void startQuickCheck();
         if (S.coords && !S.locName) reverseGeocode(S.coords.lat, S.coords.lng).then(n => { S.locName = n; renderCompose(); }).catch(() => { });
         dbg('addPhotoDataUrl 完成 view=' + S.view + ' photos=' + S.photos.length);
       } catch (e) { hideOverlay(); console.error(e); toast('照片处理失败'); }
@@ -2802,10 +2638,6 @@
     // 注册 Service Worker（可安装、离线可用）
     if ('serviceWorker' in navigator && location.hostname === 'feng.cpolar.top') {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
-    }
-    // 预取 OCR 引擎（空闲时），失败不影响主流程
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(() => { loadScript(TESS_CDN).catch(() => { workerFailed = true; }); }, { timeout: 6000 });
     }
   }
 

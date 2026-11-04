@@ -76,7 +76,6 @@
     <!-- ============ 编辑举报（像发朋友圈：看图、看定位、写说明，再点「报告」提交） ============ -->
     <section class="view" data-view="compose">
       <div class="cmp">
-        <div class="judge" data-judge hidden></div>
         <div class="cmp-photos">
           <div class="cmp-grid" id="cmp-grid"></div>
           <div class="cmp-adds">
@@ -123,8 +122,6 @@
 
     <!-- ============ 核对 ============ -->
     <section class="view" data-view="review">
-
-      <div class="judge" data-judge hidden></div>
 
       <div class="photo-box">
         <img id="review-img" alt="待举报的小广告照片">
@@ -178,7 +175,7 @@
       <div class="block" id="grp-other">
         <div class="block-hd toggle" data-toggle="other">
           <svg class="i" viewBox="0 0 24 24"><path d="M4 5h16M4 10h16M4 15h11"/></svg>
-          <b>识别到的其余文字</b>
+          <b>照片中的其余文字</b>
           <svg class="caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </div>
         <div class="raw" id="raw-text" hidden></div>
@@ -329,7 +326,7 @@
         <div class="fb-thumbs" id="fb-thumbs" hidden></div>
         <button class="act primary fb-send" id="fb-send">提交反馈</button>
         <p class="fb-tip" id="fb-tip" hidden></p>
-        <p class="fb-ver">v0.1 · 识别在本机运行，失败时可手动录入。</p>
+        <p class="fb-ver">v0.1 · 号码可手动录入，或由后台自动识别。</p>
       </div>
     </section>
 
@@ -369,7 +366,7 @@
           <path class="pg-done-tick" d="M15 27 L23 34 L38 19"/>
         </svg>
       </div>
-      <b id="ov-title">正在识别</b>
+      <b id="ov-title">正在处理</b>
       <span id="ov-text">准备中…</span>
       <span class="pg-amount" id="pg-amount" hidden></span>
       <span class="pg-detail" id="pg-detail" hidden></span>
