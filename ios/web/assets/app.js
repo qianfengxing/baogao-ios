@@ -317,6 +317,21 @@
     return cv.toDataURL('image/jpeg', quality);
   }
 
+  /* 超时兜底：离线化后 file:// 不透明源下，Worker/wasm/超大图都可能不回调，
+     任何一步卡死都自动回退，绝不让界面停住（对齐"OCR 绝不阻断提交"的设计）。 */
+  function withTimeout(promise, ms, fallback) {
+    let timer;
+    const to = new Promise(res => { timer = setTimeout(() => res({ to: true }), ms); });
+    return Promise.race([
+      promise.then(v => ({ v })).catch(() => ({ v: fallback })),
+      to
+    ]).then(r => { clearTimeout(timer); return r.to ? fallback : (r.v !== undefined ? r.v : fallback); });
+  }
+  /* 压缩卡死（iOS file:// + 超大 dataURL 偶发）时回退原图，照片不丢、界面不卡 */
+  async function compressSafe(dataUrl, maxSide, quality) {
+    return withTimeout(compress(dataUrl, maxSide, quality), 12000, dataUrl);
+  }
+
   /* ============================================================
      文本归一化 + 抽取
      ============================================================ */
@@ -430,12 +445,14 @@
   /* ============================================================
      OCR
      ============================================================ */
-  function loadScript(src) {
+  function loadScript(src, ms) {
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = src; s.async = true;
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('脚本加载失败'));
+      let done = false;
+      const t = setTimeout(() => { if (!done) { done = true; reject(new Error('脚本加载超时')); } }, ms || 12000);
+      s.onload = () => { if (!done) { done = true; clearTimeout(t); resolve(); } };
+      s.onerror = () => { if (!done) { done = true; clearTimeout(t); reject(new Error('脚本加载失败')); } };
       document.head.appendChild(s);
     });
   }
@@ -495,22 +512,27 @@
   /* ---- 轻量 OCR：eng + 数字字母白名单 ---- */
   async function quickOcr(dataUrl) {
     if (qWorkerBroken) throw new Error('引擎不可用');
-    if (!window.Tesseract) await loadScript(TESS_DIR + '/tesseract.min.js');
+    if (!window.Tesseract) await loadScript(TESS_DIR + '/tesseract.min.js', 12000);
     if (!window.Tesseract) throw new Error('引擎不可用');
 
     if (!qWorker) {
-      qWorker = await window.Tesseract.createWorker('eng', 1, {
-        workerPath: TESS_DIR + '/worker.min.js',
-        corePath: TESS_DIR + '/core/tesseract-core-simd-lstm.wasm.js',
-        langPath: TESS_DIR + '/tessdata',
-        logger: () => { }          // 初检在后台跑，不打扰用户
-      });
+      // file:// 不透明源下跨域建 Worker 可能卡死，加 15s 超时，失败静默跳过
+      qWorker = await withTimeout(
+        window.Tesseract.createWorker('eng', 1, {
+          workerPath: TESS_DIR + '/worker.min.js',
+          corePath: TESS_DIR + '/core/tesseract-core-simd-lstm.wasm.js',
+          langPath: TESS_DIR + '/tessdata',
+          logger: () => { }          // 初检在后台跑，不打扰用户
+        }),
+        15000, null
+      );
+      if (!qWorker) throw new Error('引擎初始化超时');   // 超时 → 上层静默跳过，绝不卡 UI
       // 只认数字字母和网址里会出现的符号：小广告上的联系方式就这些字符
       await qWorker.setParameters({
         tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@.:/_-'
       });
     }
-    const r = await qWorker.recognize(dataUrl);
+    const r = await withTimeout(qWorker.recognize(dataUrl), 15000, { data: { text: '', confidence: 0 } });
     const d = (r && r.data) || {};
     return { text: d.text || '', confidence: d.confidence || 0 };
   }
@@ -648,9 +670,9 @@
         try {
           const raw = await readFile(take[i]);
           let big, small;
-          try { big = await compress(raw, 1600, 0.86); }
+          try { big = await compressSafe(raw, 1600, 0.86); }
           catch (e) { big = raw; }                       // 压缩失败就用原图，不丢这张
-          try { small = await compress(raw, 420, 0.72); }
+          try { small = await compressSafe(raw, 420, 0.72); }
           catch (e) { small = big; }
           S.photos.push({ big, small });
         } catch (e) {
@@ -2720,8 +2742,8 @@
       showOverlay('正在处理照片');
       try {
         let big = dataUrl, small = dataUrl;
-        try { big = await compress(dataUrl, 1600, 0.86); } catch (e) { }
-        try { small = await compress(dataUrl, 420, 0.72); } catch (e) { }
+        try { big = await compressSafe(dataUrl, 1600, 0.86); } catch (e) { }
+        try { small = await compressSafe(dataUrl, 420, 0.72); } catch (e) { }
         S.photos.push({ big, small });
         if (!S.coords) { try { S.coords = await locateOnce(8000); } catch (e) { S.coords = null; } }
         hideOverlay();
