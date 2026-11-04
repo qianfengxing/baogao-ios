@@ -18,16 +18,16 @@
 //     WKWebView 的 <input type=file> 在 iOS 上不可靠（尤其相机），故相机/相册一律走原生桥，
 //     与安卓绕开 Flyme 破桥接的思路一致。
 //
-//  ⚠️ 本地托管（2026-11-04 改为 offline-first）：
+//  ⚠️ 本地化加载（2026-11-04 改为 offline-first）：
 //     前端资源（index.html / assets / vendor / manifest）随 App 包安装（ios/web/），
-//     由 App 内 GCDWebServer 在 127.0.0.1 提供 —— 后端 8780 在不在，界面都能开。
-//     只有「同步」才走网：/api/* 由本地 server 代理到公网 feng.cpolar.top/baogao，
-//     后端不在时返回 502，前端 OUTBOX 接管（本地暂存、联网自动补传），UI 无感。
+//     用 WKWebView.loadFileURL 直接读本地文件 —— 后端 8780 在不在，界面都能开。
+//     只有「同步」才走网：app.js 在 file:// 协议下把 API 直连公网 feng.cpolar.top/baogao
+//     （后端 CORS 已设 *，file:// 的 null origin 也可过），后端不在时 fetch 失败，
+//     前端 OUTBOX 接管（本地暂存、联网自动补传），UI 无感。与安卓 file:///android_asset 同款。
 //
 import UIKit
 import WebKit
 import CoreLocation
-import GCDWebServer
 
 final class ViewController: UIViewController,
                             WKScriptMessageHandler,
@@ -36,10 +36,9 @@ final class ViewController: UIViewController,
                             UINavigationControllerDelegate,
                             CLLocationManagerDelegate {
 
-    // App 内本地托管：前端资源随包安装（ios/web/），由 GCDWebServer 在 127.0.0.1 提供，
-    // 界面永远离线可开；/api/* 由本地 server 代理到公网 feng.cpolar.top/baogao（同步才走网）。
-    private var localServer: GCDWebServer?
-    private var baseURL: String = "http://127.0.0.1:8780/"
+    // 本地化加载：前端资源随包安装（ios/web/），用 loadFileURL 直接读本地文件，
+    // 界面永远离线可开；API 由 app.js 在 file:// 协议下直连公网 feng.cpolar.top/baogao，
+    // 后端不在时 fetch 失败、前端 OUTBOX 接管，UI 无感（与安卓 file:///android_asset 同款）。
 
     private var webView: WKWebView!
     private var picker: UIImagePickerController?
@@ -109,11 +108,9 @@ final class ViewController: UIViewController,
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
-        // 本地托管：启动 GCDWebServer 提供 ios/web/ 前端并代理 /api 到公网，然后加载本地地址。
-        // 界面离线可开，只有「同步」依赖后端（proxyAPI 返回 502 时前端 OUTBOX 接管，UI 无感）。
-        startLocalServer()
-        guard let url = URL(string: baseURL) else { return }
-        webView.load(URLRequest(url: url))
+        // 本地化加载：前端资源随包安装（ios/web/），用 loadFileURL 直接读本地文件，
+        // 界面离线可开；API 由 app.js 在 file:// 协议下直连公网，后端不在时 OUTBOX 接管。
+        loadLocalWeb()
     }
 
     // MARK: - JS → 原生：打开相机 / 相册
@@ -180,59 +177,19 @@ final class ViewController: UIViewController,
         return out
     }
 
-    // MARK: - 本地 HTTP 服务器：托管前端 + 代理 /api 到公网
-    private func startLocalServer() {
-        let server = GCDWebServer()
-        let webRoot = (Bundle.main.path(forResource: "web", ofType: nil)
-                       ?? Bundle.main.resourcePath
-                       ?? "")
-        // 静态资源：GET / -> ios/web/index.html，以及 /assets、/vendor、/manifest.json 等
-        server.addGETHandler(forBasePath: "/", directoryPath: webRoot,
-                             indexFilename: "index.html", cacheAge: 0, allowRangeRequests: true)
-        // API 代理：所有 /api/* -> https://feng.cpolar.top/baogao/api/*
-        // 用 GCDWebServerDataRequest 强制把原始 body（含 multipart 举报照片）当字节透传。
-        server.addHandler(match: .prefix("/api/"), requestClass: GCDWebServerDataRequest.self) {
-            [weak self] request, completion in
-            self?.proxyAPI(request: request as! GCDWebServerDataRequest, completion: completion)
-        }
-        do {
-            try server.start(options: ["BindToLocalhost": true, "Port": 0])
-            let port = server.port
-            baseURL = "http://127.0.0.1:\(port)/"
-            localServer = server
-            print("BaoGao local server up: \(baseURL)")
-        } catch {
-            print("BaoGao local server failed: \(error)")
-        }
-    }
-
-    private func proxyAPI(request: GCDWebServerDataRequest,
-                          completion: @escaping (GCDWebServerResponse?) -> Void) {
-        var urlStr = "https://feng.cpolar.top/baogao" + request.path
-        if let q = request.query, !q.isEmpty { urlStr += "?" + q }
-        guard let url = URL(string: urlStr) else {
-            completion(GCDWebServerResponse(statusCode: 502)); return
-        }
-        var req = URLRequest(url: url)
-        req.httpMethod = request.method ?? "GET"
-        if let body = request.data { req.httpBody = body }
-        // 透传自定义头（X-User-Token 等），但去掉 host，避免后端校验冲突
-        for (k, v) in request.headers where k.lowercased() != "host" {
-            req.setValue(v, forHTTPHeaderField: k)
-        }
-        let task = URLSession.shared.dataTask(with: req) { data, resp, err in
-            if err != nil {
-                // 同步失败（后端不在/网络断）：返回 502，前端 OUTBOX 接管，UI 无感
-                completion(GCDWebServerResponse(statusCode: 502)); return
+    // MARK: - 本地化加载：WKWebView 直读包内 ios/web/ 前端（无需本地 HTTP server）
+    //   后端 8780 在不在，界面都能开；API 由 app.js 在 file:// 下直连公网，离线仅同步失败。
+    private func loadLocalWeb() {
+        guard let webDir = Bundle.main.url(forResource: "web", withExtension: nil) else {
+            // 兜底：万一 web 没进包，退回远程（此时后端必须在才能开界面）
+            if let url = URL(string: "https://feng.cpolar.top/baogao/") {
+                webView.load(URLRequest(url: url))
             }
-            let http = resp as? HTTPURLResponse
-            let r = GCDWebServerDataResponse(
-                data: data ?? Data(),
-                contentType: http?.mimeType ?? "application/json; charset=utf-8")
-            r?.statusCode = http?.statusCode ?? 502
-            completion(r)
+            return
         }
-        task.resume()
+        let indexURL = webDir.appendingPathComponent("index.html")
+        // allowingReadAccessTo: 放开整个 web/ 目录，使 assets/ vendor/ manifest 等子资源可读
+        webView.loadFileURL(indexURL, allowingReadAccessTo: webDir)
     }
 
     // MARK: - 定位权限（Web 端 navigator.geolocation 在 WKWebView 需原生放行）

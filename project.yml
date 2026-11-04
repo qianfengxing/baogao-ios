@@ -3,13 +3,10 @@
 #
 # 本工程对照此前做的苹果 App（dice-cup-ios / img-compress-ios）同款范式：
 #   纯代码 Swift（无 storyboard）+ WKWebView 壳 + JS↔原生桥。
-# 与那两个工程的区别：本 App 是「服务器驱动」——WKWebView 直接加载远端
-#   https://feng.cpolar.top/baogao/，不把 www/ 打进包（Web 改了不用重打 IPA）。
+# 与那两个工程的区别：本 App 是「本地化加载（offline-first）」——前端 ios/web/ 随包安装，
+#   WKWebView.loadFileURL 直读本地文件，界面永远离线可开；只有 API 同步走公网。
+#   （2026-11-04 由「服务器驱动」改为本地化加载，去掉 GCDWebServer SPM 依赖，改法同安卓。）
 name: BaoGao
-packages:
-  GCDWebServer:
-    url: https://github.com/swisspol/GCDWebServer
-    from: 3.5.4
 options:
   bundleIdPrefix: com.qianfengxing
   createIntermediateGroups: true
@@ -25,9 +22,14 @@ targets:
     deploymentTarget: "15.0"
     productName: BaoGao
     sources:
-      - path: ios          # Swift 源码 + Info.plist + PrivacyInfo + 资产目录 + 内置前端 web/
-    dependencies:
-      - package: GCDWebServer
+      # Swift 源码 + Info.plist + PrivacyInfo + 资产目录
+      - path: ios
+        excludes:
+          - web
+      # 内置前端 ios/web/ 作为「文件夹引用」整目录打进包（保留 assets/vendor 子目录结构），
+      # 运行时用 Bundle.main.url(forResource:"web", withExtension:nil) 取到，WKWebView.loadFileURL 直读。
+      - path: ios/web
+        folderReference: true
     info:
       path: ios/Info.plist
       # ⚠️ 铁律（同 dice-cup-ios）：xcodegen 生成工程时会【整份重写】ios/Info.plist，
