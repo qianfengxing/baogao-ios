@@ -56,6 +56,9 @@ svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke
   flex-direction:column;
   background:var(--bg);
   overflow:hidden;
+  /* iOS 刘海/灵动岛适配：WebView 走 viewport-fit=cover 全屏铺到状态栏，需给外壳顶部
+     留安全区，所有视图内容整体下移，避免顶到刘海。非刘海设备 env() 返回 0，无影响。 */
+  padding-top:env(safe-area-inset-top,0px);
 }
 @media (min-width:560px){
   body{padding:0}

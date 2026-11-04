@@ -482,10 +482,22 @@
   function locateOnce(timeout) {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error('不支持定位'));
+      const ms = timeout || 8000;
+      let settled = false;
+      /* iOS WKWebView 的坑：定位权限被拒/未授权时，getCurrentPosition 既不成功也不失败，
+         连其内部 timeout 都不触发，导致 await 永久挂起、照片处理 overlay 永远「准备中」。
+         安卓 WebView 在拒绝时会正确回调 error，故不卡。这里加一层独立定时器强制超时，
+         无论系统是否回调，ms 后必定 reject，主流程 catch 成 null 继续，绝不再卡界面。 */
+      const guard = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('定位超时'));
+      }, ms);
       navigator.geolocation.getCurrentPosition(
-        pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        err => reject(err),
-        { enableHighAccuracy: true, timeout: timeout || 8000, maximumAge: 60000 }
+        pos => { if (settled) return; settled = true; clearTimeout(guard);
+          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+        err => { if (settled) return; settled = true; clearTimeout(guard); reject(err); },
+        { enableHighAccuracy: true, timeout: ms, maximumAge: 60000 }
       );
     });
   }
