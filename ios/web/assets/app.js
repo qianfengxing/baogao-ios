@@ -48,6 +48,8 @@
     items: [],
     loc: '',
     locName: '',    // 逆地理编码出来的地名（只显示，可手动补充）
+    posType: '',    // 位置类型（选填）：男厕 / 女厕 / 楼道 / 其他位置
+    posTypeOther: '',// 选「其他位置」时填写的具体文字（选填）
     note: '',       // 用户写的说明文字（选填，最多 300 字）
     coords: null,
     adType: 'other',
@@ -655,6 +657,15 @@
     const nt = $('#cmp-note');
     if (nt && nt.value !== (S.note || '')) nt.value = S.note || '';
 
+    // 位置类型单选回填（含「其他位置」输入框显隐）
+    const pt = S.posType || '';
+    $$('input[name="pt"]').forEach(r => { r.checked = (r.value === pt); });
+    const pto = $('#cmp-pt-other');
+    if (pto) {
+      pto.hidden = (pt !== '其他位置');
+      if (!pto.hidden && pto.value !== (S.posTypeOther || '')) pto.value = S.posTypeOther || '';
+    }
+
     const sub = $('#cmp-submit');
     if (sub) sub.disabled = !S.photos.length || S.busy;
     const st = $('#cmp-submit-text');
@@ -867,6 +878,8 @@
       loc: (S.loc || '').trim() || S.locName || '（未填写，请补充具体位置）',
       coords: S.coords,
       note: (S.note || '').trim(),   // 用户在编辑页写的说明（选填）
+      posType: S.posType || '',
+      posTypeOther: (S.posType === '其他位置') ? (S.posTypeOther || '').slice(0, 30) : '',
       coordsText: S.coords ? `${S.coords.lat.toFixed(6)}, ${S.coords.lng.toFixed(6)}` : '',
       type: typeName(),
       phones: phones.map(p => p.display),
@@ -880,6 +893,13 @@
     return r;
   }
 
+  /* 位置类型展示文案：选「其他位置」时拼接用户填写的文字 */
+  function posTypeText(r) {
+    if (!r || !r.posType) return '';
+    if (r.posType === '其他位置') return '其他位置' + (r.posTypeOther ? '：' + r.posTypeOther : '');
+    return r.posType;
+  }
+
   function plainText(r) {
     const L = [];
     L.push('【违法张贴小广告举报】');
@@ -888,6 +908,7 @@
     L.push('发现地点：' + r.loc);
     if (r.coordsText) L.push('地理坐标：' + r.coordsText);
     L.push('广告类型：' + r.type);
+    if (posTypeText(r)) L.push('位置类型：' + posTypeText(r));
     L.push('');
     if (r.note) { L.push('情况说明：' + r.note); L.push(''); }
     if (r.phones.length) {
@@ -939,6 +960,7 @@
     html += row('发现地点', esc(r.loc));
     if (r.coordsText) html += row('地理坐标', `<span style="font-family:var(--mono);font-size:12.5px">${esc(r.coordsText)}</span>`);
     html += row('广告类型', esc(r.type));
+    if (posTypeText(r)) html += row('位置类型', esc(posTypeText(r)));
     if (r.phones.length) html += `<div class="row"><div class="k">涉事号码</div>${numLines(r.phones, true)}</div>`;
     if (r.urls.length) html += `<div class="row"><div class="k">网址账号</div>${numLines(r.urls, false)}</div>`;
     if (r.excerpt) html += row('内容摘录', esc(S.maskSec ? maskText(r.excerpt) : r.excerpt));
@@ -1426,7 +1448,7 @@
       <div class="rec rec-pending" data-no="${esc(o.no)}">
         <div class="rec-main">
           <b>${esc(title)}<span class="rec-sync local">待同步</span></b>
-          <span>${esc(o.timeText || '')} · ${esc((o.report && o.report.loc) || '').slice(0, 16)}</span>
+          <span>${esc(o.timeText || '')} · ${esc((o.report && o.report.loc) || '').slice(0, 16)}${(o.report && o.report.posType) ? ' · ' + esc(o.report.posType) : ''}</span>
         </div>
         <button class="rec-del" data-dellocal="${esc(o.no)}" aria-label="删除本机">
           <svg viewBox="0 0 24 24"><path d="M6 7h12M9 7V5h6v2M8 7l1 12h6l1-12"/></svg>
@@ -1451,7 +1473,7 @@
         <img class="rec-thumb" src="${esc(thumb)}" alt="">
         <div class="rec-main">
           <b>${esc(title)}<span class="rec-sync">${esc(st)}</span></b>
-          <span>${esc(r.timeText || '')} · ${esc(r.loc || '').slice(0, 16)}</span>
+          <span>${esc(r.timeText || '')} · ${esc(r.loc || '').slice(0, 16)}${r.posType ? ' · ' + esc(r.posType) : ''}</span>
         </div>
       </div>`;
     }).join('') : '';
@@ -1994,6 +2016,8 @@
           loc: r.loc,
           coords: r.coords ? { lat: r.coords.lat, lng: r.coords.lng } : null,
           type: r.type,
+          posType: r.posType || '',
+          posTypeOther: r.posTypeOther || '',
           phones: r.phones,
           urls: r.urls,
           excerpt: r.excerpt,
@@ -2235,6 +2259,17 @@
     $('#cmp-add-album')?.addEventListener('click', () => openPicker('album'));
     $('#cmp-relocate')?.addEventListener('click', composeLocate);
     $('#cmp-loc-input')?.addEventListener('input', e => { S.loc = e.target.value; });
+    // 位置类型单选 + 「其他位置」文字输入
+    $$('input[name="pt"]').forEach(r => r.addEventListener('change', () => {
+      S.posType = r.value;
+      const other = $('#cmp-pt-other');
+      if (other) {
+        other.hidden = (r.value !== '其他位置');
+        if (other.hidden) { other.value = ''; S.posTypeOther = ''; }
+        else other.focus();
+      }
+    }));
+    $('#cmp-pt-other')?.addEventListener('input', e => { S.posTypeOther = e.target.value.trim(); });
     $('#cmp-note')?.addEventListener('input', e => {
       S.note = e.target.value;
       const c = $('#cmp-note-count'); if (c) c.textContent = String(e.target.value.length);
@@ -2251,6 +2286,10 @@
       if (S.busy) return;
       S.loc = ($('#cmp-loc-input')?.value || '').trim();
       S.note = ($('#cmp-note')?.value || '').trim();
+      const ptSel = ($$('input[name="pt"]').find(r => r.checked) || {}).value || '';
+      S.posType = ptSel;
+      if (ptSel !== '其他位置') S.posTypeOther = '';
+      else S.posTypeOther = ($('#cmp-pt-other')?.value || '').trim();
       doUpload();
     });
     el.fileCamera.addEventListener('change', e => { const fs = [...e.target.files]; dbg('fileCamera change 触发，files=' + fs.length); e.target.value = ''; addPhotos(fs); });
@@ -2506,6 +2545,9 @@
   function resetAll() {
     S.photo = null; S.thumb = null; S.photos = []; S.ocrText = ''; S.items = [];
     S.loc = ''; S.locName = ''; S.note = ''; S.coords = null; S.adType = 'other'; S.report = null;
+    S.posType = ''; S.posTypeOther = '';
+    $$('input[name="pt"]').forEach(r => r.checked = false);
+    const pto = $('#cmp-pt-other'); if (pto) { pto.value = ''; pto.hidden = true; }
     el.inpLoc.value = '';
     const cmpNote = $('#cmp-note'); if (cmpNote) cmpNote.value = '';
     const cmpLoc = $('#cmp-loc-input'); if (cmpLoc) cmpLoc.value = '';
